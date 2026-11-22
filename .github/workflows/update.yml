@@ -1,0 +1,76 @@
+name: Update casks
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  repository_dispatch:
+    types: [jot-release]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-casks
+  cancel-in-progress: false
+
+jobs:
+  jot:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+        with:
+          # setup-homebrew replaces the checkout's .git, dropping the credentials
+          # actions/checkout stored there. Its token stays configured for the
+          # rest of the job, which the update branch push needs.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tap local repo
+        run: |
+          tap_dir="$(brew --repository)/Library/Taps/jmdelafe/homebrew-tap"
+          mkdir -p "$(dirname "$tap_dir")"
+          rm -rf "$tap_dir"
+          ln -sf "$GITHUB_WORKSPACE" "$tap_dir"
+          brew trust jmdelafe/tap
+
+      - name: Check for a new version
+        id: check
+        run: |
+          json=$(brew livecheck --cask --json jmdelafe/tap/jot)
+          current=$(jq -r '.[0].version.current' <<<"$json")
+          latest=$(jq -r '.[0].version.latest' <<<"$json")
+          echo "current=$current latest=$latest"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Open update pull request
+        if: steps.check.outputs.latest != steps.check.outputs.current && steps.check.outputs.latest != 'null'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check.outputs.latest }}
+        run: |
+          branch="update/jot-${VERSION}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "Branch $branch already exists."
+            exit 0
+          fi
+          url="https://github.com/jmdelafe/jot/releases/download/v${VERSION}/Jot-macos-arm64.zip"
+          sha=$(curl -fsSL "$url" | shasum -a 256 | cut -d' ' -f1)
+          sed -i '' -E \
+            -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
+            -e "s/^  sha256 \".*\"/  sha256 \"${sha}\"/" \
+            Casks/jot.rb
+          brew style jmdelafe/tap
+          brew audit --cask --online --except=github_prerelease_version,token_conflicts jmdelafe/tap/jot
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "jot ${VERSION}"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --base main --head "$branch" \
+            --title "jot ${VERSION}" \
+            --body "Automated update of the Jot cask to [v${VERSION}](https://github.com/jmdelafe/jot/releases/tag/v${VERSION})."

@@ -1,0 +1,45 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+
+      - name: Tap local repo
+        run: |
+          tap_dir="$(brew --repository)/Library/Taps/jmdelafe/homebrew-tap"
+          mkdir -p "$(dirname "$tap_dir")"
+          rm -rf "$tap_dir"
+          ln -sf "$GITHUB_WORKSPACE" "$tap_dir"
+          brew trust jmdelafe/tap
+
+      - name: Style
+        run: brew style jmdelafe/tap
+
+      # Jot only ships pre-releases for now, and its token matches the unrelated
+      # homebrew/core `jot` formula, so skip those two audits.
+      - name: Audit
+        run: brew audit --cask --strict --online --except=github_prerelease_version,token_conflicts jmdelafe/tap/jot
+
+      - name: Install and uninstall
+        run: |
+          brew install --cask jmdelafe/tap/jot
+          test -d /Applications/Jot.app
+          brew uninstall --cask jmdelafe/tap/jot
