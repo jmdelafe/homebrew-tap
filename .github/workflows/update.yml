@@ -86,7 +86,8 @@ jobs:
             -e "s/^  sha256 \".*\"/  sha256 \"${sha}\"/" \
             "Casks/${CASK}.rb"
           brew style jmdelafe/tap
-          brew audit --cask --online $AUDIT_EXCEPT "jmdelafe/tap/${CASK}"
+          read -ra audit_args <<<"$AUDIT_EXCEPT"
+          brew audit --cask --online "${audit_args[@]}" "jmdelafe/tap/${CASK}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
