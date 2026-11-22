@@ -36,10 +36,16 @@ jobs:
       # Jot only ships pre-releases for now, and its token matches the unrelated
       # homebrew/core `jot` formula, so skip those two audits.
       - name: Audit
-        run: brew audit --cask --strict --online --except=github_prerelease_version,token_conflicts jmdelafe/tap/jot
+        run: |
+          brew audit --cask --strict --online --except=github_prerelease_version,token_conflicts jmdelafe/tap/jot
+          brew audit --cask --strict --online jmdelafe/tap/alacritty
 
       - name: Install and uninstall
         run: |
           brew install --cask jmdelafe/tap/jot
           test -d /Applications/Jot.app
           brew uninstall --cask jmdelafe/tap/jot
+          brew install --cask jmdelafe/tap/alacritty
+          test -d /Applications/Alacritty.app
+          alacritty --version
+          brew uninstall --cask jmdelafe/tap/alacritty

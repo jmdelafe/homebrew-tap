@@ -16,8 +16,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  jot:
+  update:
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - cask: jot
+            # VERSION is substituted from the livecheck result.
+            url: https://github.com/jmdelafe/jot/releases/download/vVERSION/Jot-macos-arm64.zip
+            release: https://github.com/jmdelafe/jot/releases/tag/vVERSION
+            audit_except: --except=github_prerelease_version,token_conflicts
+          - cask: alacritty
+            url: https://github.com/alacritty/alacritty/releases/download/vVERSION/Alacritty-vVERSION.dmg
+            release: https://github.com/alacritty/alacritty/releases/tag/vVERSION
+            audit_except: ''
     steps:
       - uses: actions/checkout@v5
 
@@ -39,8 +53,10 @@ jobs:
 
       - name: Check for a new version
         id: check
+        env:
+          CASK: ${{ matrix.cask }}
         run: |
-          json=$(brew livecheck --cask --json jmdelafe/tap/jot)
+          json=$(brew livecheck --cask --json "jmdelafe/tap/${CASK}")
           current=$(jq -r '.[0].version.current' <<<"$json")
           latest=$(jq -r '.[0].version.latest' <<<"$json")
           echo "current=$current latest=$latest"
@@ -52,25 +68,31 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.check.outputs.latest }}
+          CASK: ${{ matrix.cask }}
+          URL_TEMPLATE: ${{ matrix.url }}
+          RELEASE_TEMPLATE: ${{ matrix.release }}
+          AUDIT_EXCEPT: ${{ matrix.audit_except }}
         run: |
-          branch="update/jot-${VERSION}"
+          branch="update/${CASK}-${VERSION}"
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
             echo "Branch $branch already exists."
             exit 0
           fi
-          url="https://github.com/jmdelafe/jot/releases/download/v${VERSION}/Jot-macos-arm64.zip"
+          url="${URL_TEMPLATE//VERSION/$VERSION}"
+          release="${RELEASE_TEMPLATE//VERSION/$VERSION}"
           sha=$(curl -fsSL "$url" | shasum -a 256 | cut -d' ' -f1)
           sed -i '' -E \
             -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
             -e "s/^  sha256 \".*\"/  sha256 \"${sha}\"/" \
-            Casks/jot.rb
+            "Casks/${CASK}.rb"
           brew style jmdelafe/tap
-          brew audit --cask --online --except=github_prerelease_version,token_conflicts jmdelafe/tap/jot
+          read -ra audit_args <<<"$AUDIT_EXCEPT"
+          brew audit --cask --online "${audit_args[@]}" "jmdelafe/tap/${CASK}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git commit -am "jot ${VERSION}"
+          git commit -am "${CASK} ${VERSION}"
           git push origin "HEAD:refs/heads/$branch"
           gh pr create --base main --head "$branch" \
-            --title "jot ${VERSION}" \
-            --body "Automated update of the Jot cask to [v${VERSION}](https://github.com/jmdelafe/jot/releases/tag/v${VERSION})."
+            --title "${CASK} ${VERSION}" \
+            --body "Automated update of the ${CASK} cask to [v${VERSION}](${release})."
