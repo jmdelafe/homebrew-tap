@@ -1,6 +1,6 @@
 cask "jot" do
-  version "0.1.0-alpha"
-  sha256 "9c44ffdb75ee2e7620aeeddb49d43dcb7441bd47828c70ad593dc873797004a6"
+  version "0.1.0"
+  sha256 "50b513db098970dfe56dd5521a16973de85ba7ec6f628d5ecbcd02810a2f3c2f"
 
   url "https://github.com/jmdelafe/jot/releases/download/v#{version}/Jot-macos-arm64.zip"
   name "Jot"
